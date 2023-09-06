@@ -1,0 +1,587 @@
+{
+  "schema_version": 18,
+  "standard_lib_version": 35,
+  "action_runtime_version": 4,
+  "name": "Canary Token Detection and Enrichment",
+  "description": "This story receives any webhook based canary token generated and extracts the base domain to determine if it is part of your corporate scope or not. \n\nIf it is, a basic google search via SERP API will find any mentions of the memo in case it was parsed and indexed anywhere and likely a basic insider threat accidental or otherwise with SOC notificaiton.\n\nIf it is not, the IP is extracted and then searched for CTI details from AbuseIDB and a Port scan for common services is initiated. Results are extracted and sent to the email for SOC notification and an abuse@extractedhost.com is sent requesting further investigation action.\n\nThis is just a starter template and there is so much more that can be done with the JSON results other than just an email. \n\nTaken from:\ndwchow.medium.com\ngithub.com/dc401",
+  "guid": "4e3d6d1d55457c92485272c4c7e7162a",
+  "slug": "canary_token_detection_and_enrichment",
+  "agents": [
+    {
+      "type": "Agents::WebhookAgent",
+      "name": "Receive Canary Token Webhook",
+      "disabled": false,
+      "description": null,
+      "guid": "3da9b11e2effcba4fbc4a9cd4c8b61ca",
+      "origin_story_identifier": "cloud:d521f765a49c72507257a2620612ee96:7ca47b2784d1f1e23fb3d15333ffe913",
+      "options": {
+        "secret": "c210bf3d06e5df4b239d766a88109266",
+        "verbs": "get,post",
+        "include_headers": false,
+        "path": "bf4d33ffa4dfa24a7025f22c2b0de1f4"
+      },
+      "reporting": {
+        "time_saved_value": 0,
+        "time_saved_unit": "minutes"
+      },
+      "monitoring": {
+        "monitor_all_events": false,
+        "monitor_failures": false,
+        "monitor_no_events_emitted": null
+      },
+      "template": {
+        "created_from_template_guid": null,
+        "created_from_template_version": null
+      },
+      "visuals": {
+        "card_icon_image_contents": null,
+        "card_icon_image_filename": null,
+        "card_icon_name": null
+      },
+      "width": null
+    },
+    {
+      "type": "Agents::HTTPRequestAgent",
+      "name": "Search for IP Address in Abuse IPDB",
+      "disabled": false,
+      "description": "Search for reports associated with an IP Address (IPV4 or IPV6) in Abuse IPDB. The Verbose parameter will return details of those reports. The 'maxAgeInDays' parameter is also optional",
+      "guid": "0c46a929eda63885a4bef40e4f3dea09",
+      "origin_story_identifier": "cloud:cce177551c56c85c5660ae765a604180:4e3d6d1d55457c92485272c4c7e7162a",
+      "options": {
+        "url": "https://api.abuseipdb.com/api/v2/check",
+        "content_type": "application_json",
+        "method": "get",
+        "payload": {
+          "maxAgeInDays": "60",
+          "ipAddress": "<<receive_canary_token_webhook.src_ip>>",
+          "verbose": "true"
+        },
+        "headers": {
+          "key": "<<CREDENTIAL.abuseipdb>>"
+        }
+      },
+      "reporting": {
+        "time_saved_value": 0,
+        "time_saved_unit": "minutes"
+      },
+      "monitoring": {
+        "monitor_all_events": false,
+        "monitor_failures": false,
+        "monitor_no_events_emitted": null
+      },
+      "template": {
+        "created_from_template_guid": "6da91c214f15d9d92ca36177c67a7f3195af2ee90533bb9b9c4d90846ba11fa0",
+        "created_from_template_version": 1
+      },
+      "visuals": {
+        "card_icon_image_contents": null,
+        "card_icon_image_filename": null,
+        "card_icon_name": "httpRequest"
+      },
+      "width": null,
+      "schedule": null
+    },
+    {
+      "type": "Agents::TriggerAgent",
+      "name": "Check for source bad rep and high confidence",
+      "disabled": false,
+      "description": "If confidence score is 90 or above with bad reputation.",
+      "guid": "52073c7bf33c4fc1dfafdb1eb68a70c1",
+      "origin_story_identifier": "cloud:cce177551c56c85c5660ae765a604180:4e3d6d1d55457c92485272c4c7e7162a",
+      "options": {
+        "rules": [
+          {
+            "type": "field!=value",
+            "value": "0",
+            "path": "<<search_for_ip_address_in_abuse_ipdb.body.data.totalReports>>"
+          },
+          {
+            "type": "field>=value",
+            "value": "90",
+            "path": "=search_for_ip_address_in_abuse_ipdb.body.data.abuseConfidenceScore"
+          }
+        ]
+      },
+      "reporting": {
+        "time_saved_value": 0,
+        "time_saved_unit": "minutes"
+      },
+      "monitoring": {
+        "monitor_all_events": false,
+        "monitor_failures": false,
+        "monitor_no_events_emitted": null
+      },
+      "template": {
+        "created_from_template_guid": null,
+        "created_from_template_version": null
+      },
+      "visuals": {
+        "card_icon_image_contents": null,
+        "card_icon_image_filename": null,
+        "card_icon_name": null
+      },
+      "width": null
+    },
+    {
+      "type": "Agents::EmailAgent",
+      "name": "Send Email with Enriched Threat Intel",
+      "disabled": true,
+      "description": "Send email notifying of known reported abuse with high confidence hit.",
+      "guid": "72006b5c4aa73c7b3f5be8795eeec041",
+      "origin_story_identifier": "cloud:cce177551c56c85c5660ae765a604180:4e3d6d1d55457c92485272c4c7e7162a",
+      "options": {
+        "recipients": [
+          "soc@yourdomain.com"
+        ],
+        "reply_to": "soc@yourdomain.com",
+        "sender_name": "Tines Security Automation",
+        "subject": "Tines CanaryToken Word Doc Opened by Known Abusive IP",
+        "body": "Tines CanaryToken Word Doc Opened by Known Abusive IP:\n\n\nTotal AbuseIPDB Reports:\n<<TEXT(search_for_ip_address_in_abuse_ipdb.body.data.totalReports)>>\n\nSource IP info below:\n<<TEXT(receive_canary_token_webhook.time)>>\n\n<<TEXT(receive_canary_token_webhook.token_type)>>\n\n<<TEXT(receive_canary_token_webhook.src_ip)>>\n\n<<TEXT)receive_canary_token_webhook.memo)>>\n\n<<TEXT(receive_canary_token_webhook.additional_data.geo_info.country)>>\n\n<<TEXT(receive_canary_token_webhook.additional_data.geo_info.hostname)>>\n\n<<TEXT(receive_canary_token_webhook.additional_data.geo_info.timezone)>>\n\nViewDNS Common Port Scan Results:\n<<TEXT(extract_portscan_json.results)>>"
+      },
+      "reporting": {
+        "time_saved_value": 0,
+        "time_saved_unit": "minutes"
+      },
+      "monitoring": {
+        "monitor_all_events": false,
+        "monitor_failures": false,
+        "monitor_no_events_emitted": null
+      },
+      "template": {
+        "created_from_template_guid": null,
+        "created_from_template_version": null
+      },
+      "visuals": {
+        "card_icon_image_contents": null,
+        "card_icon_image_filename": null,
+        "card_icon_name": null
+      },
+      "width": null,
+      "schedule": null
+    },
+    {
+      "type": "Agents::EventTransformationAgent",
+      "name": "extract-base-domain",
+      "disabled": false,
+      "description": null,
+      "guid": "a104b4afa95d708a99f4c5d262d48fcc",
+      "origin_story_identifier": "cloud:cce177551c56c85c5660ae765a604180:4e3d6d1d55457c92485272c4c7e7162a",
+      "options": {
+        "mode": "extract",
+        "matchers": [
+          {
+            "path": "=receive_canary_token_webhook.additional_data.geo_info.hostname",
+            "regexp": "(\\w{2,60}\\.\\w{2,3})$",
+            "to": "results"
+          }
+        ]
+      },
+      "reporting": {
+        "time_saved_value": 0,
+        "time_saved_unit": "minutes"
+      },
+      "monitoring": {
+        "monitor_all_events": false,
+        "monitor_failures": false,
+        "monitor_no_events_emitted": null
+      },
+      "template": {
+        "created_from_template_guid": null,
+        "created_from_template_version": null
+      },
+      "visuals": {
+        "card_icon_image_contents": null,
+        "card_icon_image_filename": null,
+        "card_icon_name": null
+      },
+      "width": null,
+      "schedule": null
+    },
+    {
+      "type": "Agents::EmailAgent",
+      "name": "Send Email - Takedown Request",
+      "disabled": true,
+      "description": null,
+      "guid": "18b4f6ee5ddbc0b73a56673f9e183917",
+      "origin_story_identifier": "cloud:cce177551c56c85c5660ae765a604180:4e3d6d1d55457c92485272c4c7e7162a",
+      "options": {
+        "recipients": "=APPEND(\"abuse@\", extract_base_domain.results)",
+        "reply_to": "soc@yourdomain.com",
+        "sender_name": "SOC Your Company",
+        "subject": "Host Investigation and Takedown Request",
+        "body": "Hello we found foo bar based on canary token and believe someone uploaded one or more documents related to network from one of your hosts on your ASN.\n\nCan you please investigate?\n<<TEXT(receive_canary_token_webhook.src_ip)>>\n<<TEXT(receive_canary_token_webhook.time)>>\n<<TEXT(receive_canary_token_webhook.additional_data.geo_info.hostname)>>\n<<TEXT(receive_canary_token_webhook.additional_data.geo_info.asn)>>\n\nGoogle Search Results Related to The Canary Token Memo:\n<<TEXT(search_token_message_on_google.body.organic_results)>>\n\n"
+      },
+      "reporting": {
+        "time_saved_value": 0,
+        "time_saved_unit": "minutes"
+      },
+      "monitoring": {
+        "monitor_all_events": false,
+        "monitor_failures": false,
+        "monitor_no_events_emitted": null
+      },
+      "template": {
+        "created_from_template_guid": null,
+        "created_from_template_version": null
+      },
+      "visuals": {
+        "card_icon_image_contents": null,
+        "card_icon_image_filename": null,
+        "card_icon_name": null
+      },
+      "width": null,
+      "schedule": null
+    },
+    {
+      "type": "Agents::HTTPRequestAgent",
+      "name": "Start ViewDNS PortScan",
+      "disabled": false,
+      "description": null,
+      "guid": "516f7a1b1ec690ec6405166f979d8cf3",
+      "origin_story_identifier": "cloud:cce177551c56c85c5660ae765a604180:4e3d6d1d55457c92485272c4c7e7162a",
+      "options": {
+        "url": "https://api.viewdns.info/portscan/?host=<<receive_canary_token_webhook.src_ip>>&apikey=<<CREDENTIAL.viewdns>>&output=json",
+        "content_type": "application_json",
+        "method": "get"
+      },
+      "reporting": {
+        "time_saved_value": 0,
+        "time_saved_unit": "minutes"
+      },
+      "monitoring": {
+        "monitor_all_events": false,
+        "monitor_failures": false,
+        "monitor_no_events_emitted": null
+      },
+      "template": {
+        "created_from_template_guid": null,
+        "created_from_template_version": null
+      },
+      "visuals": {
+        "card_icon_image_contents": null,
+        "card_icon_image_filename": null,
+        "card_icon_name": null
+      },
+      "width": null,
+      "schedule": null
+    },
+    {
+      "type": "Agents::TriggerAgent",
+      "name": "Validate External Host",
+      "disabled": false,
+      "description": "If this is from a non-corporate domain. We should ensure if parts of any other threat intel known hosts and see if there are potential open ports as a botnet for C2 handlers.",
+      "guid": "87e791afb2aec4c3cce081a6efc217f7",
+      "origin_story_identifier": "cloud:cce177551c56c85c5660ae765a604180:4e3d6d1d55457c92485272c4c7e7162a",
+      "options": {
+        "rules": [
+          {
+            "type": "in",
+            "value": "yourdomain.com",
+            "path": "=extract_base_domain.results"
+          }
+        ]
+      },
+      "reporting": {
+        "time_saved_value": 0,
+        "time_saved_unit": "minutes"
+      },
+      "monitoring": {
+        "monitor_all_events": false,
+        "monitor_failures": false,
+        "monitor_no_events_emitted": null
+      },
+      "template": {
+        "created_from_template_guid": null,
+        "created_from_template_version": null
+      },
+      "visuals": {
+        "card_icon_image_contents": null,
+        "card_icon_image_filename": null,
+        "card_icon_name": null
+      },
+      "width": null
+    },
+    {
+      "type": "Agents::HTTPRequestAgent",
+      "name": "Search Token Message on Google",
+      "disabled": false,
+      "description": "Do quick google search to see if the file was indexed to known sites in a potential accidental leak.",
+      "guid": "8249cd55e948a50e0fbf3ece8f85f216",
+      "origin_story_identifier": "cloud:cce177551c56c85c5660ae765a604180:4e3d6d1d55457c92485272c4c7e7162a",
+      "options": {
+        "url": "https://serpapi.com/search",
+        "content_type": "application_json",
+        "method": "get",
+        "payload": {
+          "engine": "google",
+          "q": "<<receive_canary_token_webhook.memo>>",
+          "api_key": "<<CREDENTIAL.serpapi>>"
+        }
+      },
+      "reporting": {
+        "time_saved_value": 0,
+        "time_saved_unit": "minutes"
+      },
+      "monitoring": {
+        "monitor_all_events": false,
+        "monitor_failures": false,
+        "monitor_no_events_emitted": null
+      },
+      "template": {
+        "created_from_template_guid": null,
+        "created_from_template_version": null
+      },
+      "visuals": {
+        "card_icon_image_contents": null,
+        "card_icon_image_filename": null,
+        "card_icon_name": null
+      },
+      "width": null,
+      "schedule": null
+    },
+    {
+      "type": "Agents::EmailAgent",
+      "name": "Send Email Notify SOC",
+      "disabled": true,
+      "description": "Send email to SOC to investigate",
+      "guid": "fa7fdfb8ae4a6e7b31a8dc08ed8520c4",
+      "origin_story_identifier": "cloud:cce177551c56c85c5660ae765a604180:4e3d6d1d55457c92485272c4c7e7162a",
+      "options": {
+        "recipients": [
+          "<<APPEND(\"abuse@\", extract_base_domain.results)>>"
+        ],
+        "reply_to": "soc@yourdomain.com",
+        "sender_name": "Tines Automation Alert",
+        "subject": "Canary Token Opened by Internal User",
+        "body": "Token triggered:\n<<TEXT(receive_canary_token_webhook.src_ip)>>\n<<TEXT(receive_canary_token_webhook.time)>>\n<<TEXT(receive_canary_token_webhook.additional_data.geo_info.hostname)>>\n<<TEXT(receive_canary_token_webhook.additional_data.geo_info.asn)>>\n\nGoogle Search Results Related to The Canary Token Memo:\n<<TEXT(search_token_message_on_google.body.organic_results)>>\n\n"
+      },
+      "reporting": {
+        "time_saved_value": 0,
+        "time_saved_unit": "minutes"
+      },
+      "monitoring": {
+        "monitor_all_events": false,
+        "monitor_failures": false,
+        "monitor_no_events_emitted": null
+      },
+      "template": {
+        "created_from_template_guid": null,
+        "created_from_template_version": null
+      },
+      "visuals": {
+        "card_icon_image_contents": null,
+        "card_icon_image_filename": null,
+        "card_icon_name": null
+      },
+      "width": null,
+      "schedule": null
+    },
+    {
+      "type": "Agents::EventTransformationAgent",
+      "name": "extract-portscan-json",
+      "disabled": false,
+      "description": null,
+      "guid": "81144beb0e13260cbbcb43589c5faf57",
+      "origin_story_identifier": "cloud:cce177551c56c85c5660ae765a604180:4e3d6d1d55457c92485272c4c7e7162a",
+      "options": {
+        "mode": "extract",
+        "matchers": [
+          {
+            "path": "=TEXT(start_viewdns_portscan.body.response.port)",
+            "regexp": ".*",
+            "to": "results"
+          }
+        ]
+      },
+      "reporting": {
+        "time_saved_value": 0,
+        "time_saved_unit": "minutes"
+      },
+      "monitoring": {
+        "monitor_all_events": false,
+        "monitor_failures": false,
+        "monitor_no_events_emitted": null
+      },
+      "template": {
+        "created_from_template_guid": null,
+        "created_from_template_version": null
+      },
+      "visuals": {
+        "card_icon_image_contents": null,
+        "card_icon_image_filename": null,
+        "card_icon_name": null
+      },
+      "width": null,
+      "schedule": null
+    },
+    {
+      "type": "Agents::TriggerAgent",
+      "name": "Validate Internal Host",
+      "disabled": false,
+      "description": "If source is from an external host perform a google search first before emailing SOC and abuse@domain",
+      "guid": "c99b767d76e63b00e79327a6a2dd0876",
+      "origin_story_identifier": "cloud:cce177551c56c85c5660ae765a604180:4e3d6d1d55457c92485272c4c7e7162a",
+      "options": {
+        "rules": [
+          {
+            "type": "not in",
+            "value": "yourdomain.com",
+            "path": "=extract_base_domain.results"
+          }
+        ]
+      },
+      "reporting": {
+        "time_saved_value": 0,
+        "time_saved_unit": "minutes"
+      },
+      "monitoring": {
+        "monitor_all_events": false,
+        "monitor_failures": false,
+        "monitor_no_events_emitted": null
+      },
+      "template": {
+        "created_from_template_guid": null,
+        "created_from_template_version": null
+      },
+      "visuals": {
+        "card_icon_image_contents": null,
+        "card_icon_image_filename": null,
+        "card_icon_name": null
+      },
+      "width": null
+    }
+  ],
+  "diagram_notes": [
+    {
+      "content": "Useful SecOps? Check out more at:\n[dwchow.medium.com \n](https://dwchow.medium.com)\n[github.com/dc401](https://github.com/dc401)\n\n**Canry Tokens Example**\n- Remember to setup your abuseipdb and viewdns.info, and SERP API credential tokens\n- You will also need to enable greyed out modules. These are disabled by default to node trigger too many alarms during a test.",
+      "position": [
+        -690.0,
+        -1725.0
+      ],
+      "guid": "e038a68877f67555410ef59aa5a5ab1a",
+      "width": 356
+    }
+  ],
+  "links": [
+    {
+      "source": 0,
+      "receiver": 4
+    },
+    {
+      "source": 1,
+      "receiver": 2
+    },
+    {
+      "source": 2,
+      "receiver": 3
+    },
+    {
+      "source": 3,
+      "receiver": 5
+    },
+    {
+      "source": 4,
+      "receiver": 7
+    },
+    {
+      "source": 4,
+      "receiver": 11
+    },
+    {
+      "source": 6,
+      "receiver": 10
+    },
+    {
+      "source": 7,
+      "receiver": 1
+    },
+    {
+      "source": 7,
+      "receiver": 6
+    },
+    {
+      "source": 8,
+      "receiver": 9
+    },
+    {
+      "source": 10,
+      "receiver": 3
+    },
+    {
+      "source": 11,
+      "receiver": 8
+    }
+  ],
+  "diagram_layout": "{\"3da9b11e2effcba4fbc4a9cd4c8b61ca\":[-945,-1590],\"0c46a929eda63885a4bef40e4f3dea09\":[-1185,-1290],\"52073c7bf33c4fc1dfafdb1eb68a70c1\":[-1185,-1170],\"72006b5c4aa73c7b3f5be8795eeec041\":[-945,-1080],\"a104b4afa95d708a99f4c5d262d48fcc\":[-945,-1485],\"18b4f6ee5ddbc0b73a56673f9e183917\":[-945,-975],\"516f7a1b1ec690ec6405166f979d8cf3\":[-945,-1290],\"87e791afb2aec4c3cce081a6efc217f7\":[-945,-1395],\"8249cd55e948a50e0fbf3ece8f85f216\":[-615,-1320],\"fa7fdfb8ae4a6e7b31a8dc08ed8520c4\":[-615,-1155],\"81144beb0e13260cbbcb43589c5faf57\":[-945,-1200],\"c99b767d76e63b00e79327a6a2dd0876\":[-735,-1395]}",
+  "send_to_story_enabled": false,
+  "entry_agent_guid": null,
+  "exit_agent_guids": [],
+  "exit_agent_guid": null,
+  "api_entry_action_guids": [],
+  "api_exit_action_guids": [],
+  "keep_events_for": 86400,
+  "reporting_status": true,
+  "send_to_story_access": null,
+  "story_library_metadata": {
+    "tags": [
+      "abuseipdb",
+      "canarytoken",
+      "dnsview.info",
+      "email",
+      "google search",
+      "honeyrecord",
+      "portscan",
+      "serpapi",
+      "detection"
+    ],
+    "icons": [
+      "thinkst-canary",
+      "🧐",
+      "📈"
+    ],
+    "visibility": "public"
+  },
+  "monitor_failures": false,
+  "send_to_stories": [],
+  "form": null,
+  "synchronous_webhooks_enabled": false,
+  "forms": [],
+  "pages": [],
+  "tags": [
+    {
+      "name": "abuseipdb"
+    },
+    {
+      "name": "canarytoken"
+    },
+    {
+      "name": "detection"
+    },
+    {
+      "name": "dnsview.info"
+    },
+    {
+      "name": "email"
+    },
+    {
+      "name": "google search"
+    },
+    {
+      "name": "honeyrecord"
+    },
+    {
+      "name": "portscan"
+    },
+    {
+      "name": "serpapi"
+    }
+  ],
+  "time_saved_unit": "minutes",
+  "time_saved_value": 0,
+  "origin_story_identifier": "cloud:d521f765a49c72507257a2620612ee96:7ca47b2784d1f1e23fb3d15333ffe913",
+  "integration_product": null,
+  "integration_vendor": null,
+  "exported_at": "2023-09-06T03:48:44Z",
+  "icon": ":thinkstcanary:",
+  "integrations": []
+}
